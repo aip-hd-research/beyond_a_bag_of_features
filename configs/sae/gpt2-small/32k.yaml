@@ -1,0 +1,5 @@
+defaults:
+  - /sae/gpt2-small/base@_here_
+
+release: "gpt2-small-resid-post-v5-32k"
+id_template: "blocks.{}.hook_resid_post"

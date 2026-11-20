@@ -1,0 +1,11 @@
+# @package _global_
+# App. G: steering with SAE decoder directions (main_by_sae_features.py).
+defaults:
+  - /sae: gemma-3-270m/16k_big
+  - /wandb: default
+  - _self_
+
+wandb:
+  project: appendix_interference
+
+data_csv: data/data.csv

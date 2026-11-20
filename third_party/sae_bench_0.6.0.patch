@@ -1,0 +1,211 @@
+diff --git a/sae_bench/evals/autointerp/main.py b/sae_bench/evals/autointerp/main.py
+old mode 100644
+new mode 100755
+index 56cd3ba..819334e
+--- a/sae_bench/evals/autointerp/main.py
++++ b/sae_bench/evals/autointerp/main.py
+@@ -3,6 +3,7 @@ import asyncio
+ import gc
+ import os
+ import random
++import re
+ import time
+ from collections.abc import Iterator
+ from concurrent.futures import ThreadPoolExecutor
+@@ -11,7 +12,7 @@ from datetime import datetime
+ from typing import Any, Literal, TypeAlias
+ 
+ import torch
+-from openai import OpenAI
++from openai import OpenAI, RateLimitError
+ from sae_lens import SAE
+ from tabulate import tabulate
+ from torch import Tensor
+@@ -318,13 +319,38 @@ class AutoInterp:
+ 
+         client = OpenAI(api_key=self.api_key)
+ 
+-        result = client.chat.completions.create(
+-            model="gpt-4o-mini",
+-            messages=messages,  # type: ignore
+-            n=n_completions,
+-            max_tokens=max_tokens,
+-            stream=False,
+-        )
++        max_retries = 10
++        for attempt in range(max_retries):
++            try:
++                result = client.chat.completions.create(
++                    model="gpt-4o-mini",
++                    messages=messages,  # type: ignore
++                    n=n_completions,
++                    max_tokens=max_tokens,
++                    stream=False,
++                )
++                break
++            except RateLimitError as e:
++                if attempt == max_retries - 1:
++                    raise
++                # Parse suggested wait time from the error message, e.g. "retry after 2.5s"
++                msg = str(e)
++                m = re.search(r"try again in ([0-9.]+)(ms|s|m)", msg)
++                if m:
++                    val, unit = float(m.group(1)), m.group(2)
++                    suggested = val / 1000 if unit == "ms" else val * 60 if unit == "m" else val
++                else:
++                    suggested = 2.0 ** attempt
++                # Daily RPD limit has multi-hour waits — bail out immediately rather than sleeping
++                if suggested > 300:
++                    raise RuntimeError(
++                        f"Daily request limit exceeded. Reset in ~{suggested/3600:.1f}h. "
++                        "Reduce the number of candidates per group."
++                    ) from e
++                delay = suggested + 0.5  # small buffer on top of OpenAI's suggestion
++                print(f"\n[rate limit] attempt {attempt + 1}/{max_retries}, "
++                      f"retrying in {delay:.1f}s …")
++                time.sleep(delay)
+         response = [choice.message.content.strip() for choice in result.choices]
+ 
+         logs = tabulate(
+diff --git a/sae_bench/sae_bench_utils/activation_collection.py b/sae_bench/sae_bench_utils/activation_collection.py
+old mode 100644
+new mode 100755
+index ec2511e..88755ef
+--- a/sae_bench/sae_bench_utils/activation_collection.py
++++ b/sae_bench/sae_bench_utils/activation_collection.py
+@@ -113,7 +113,7 @@ def get_llm_activations(
+         desc="Collecting activations",
+         disable=not show_progress,
+     ):
+-        tokens_BL = tokens[i : i + batch_size]
++        tokens_BL = tokens[i : i + batch_size].to(model.W_E.device)
+ 
+         acts_BLD = None
+ 
+@@ -181,29 +181,40 @@ def collect_sae_activations(
+     sae_acts = []
+ 
+     for i in tqdm(range(0, tokens.shape[0], batch_size)):
+-        tokens_BL = tokens[i : i + batch_size]
++        tokens_BL = tokens[i : i + batch_size].to(model.W_E.device)
+         _, cache = model.run_with_cache(
+             tokens_BL, stop_at_layer=layer + 1, names_filter=hook_name
+         )
+-        resid_BLD: Float[torch.Tensor, "batch seq_len d_model"] = cache[hook_name]
+-
+-        sae_act_BLF: Float[torch.Tensor, "batch seq_len d_sae"] = sae.encode(resid_BLD)
+-
+-        if selected_latents is not None:
+-            sae_act_BLF = sae_act_BLF[:, :, selected_latents]
++        resid_BLD: Float[torch.Tensor, "batch seq_len d_model"] = cache[hook_name].to(sae.device)
+ 
+         if mask_bos_pad_eos_tokens:
+             attn_mask_BL = get_bos_pad_eos_mask(tokens_BL, model.tokenizer)
+         else:
+             attn_mask_BL = torch.ones_like(tokens_BL, dtype=torch.bool)
+ 
+-        attn_mask_BL = attn_mask_BL.to(device=sae_act_BLF.device)
++        attn_mask_BL = attn_mask_BL.to(device=resid_BLD.device)
+ 
+-        sae_act_BLF = sae_act_BLF * attn_mask_BL[:, :, None]
++        # Flatten [B, L, D] -> [B*L, D] and encode in token-level chunks to
++        # avoid materialising the full [B, L, d_sae] tensor (>512 MiB for wide SAEs).
++        B, L, D = resid_BLD.shape
++        resid_flat = resid_BLD.reshape(B * L, D)
++        mask_flat = attn_mask_BL.reshape(B * L)
++        d_sae = sae.W_dec.shape[0]
++        # target ~256 MiB per encode call regardless of d_sae
++        token_chunk = max(1, (256 * 1024 * 1024) // (d_sae * resid_flat.element_size()))
+ 
+-        if activation_dtype is not None:
+-            sae_act_BLF = sae_act_BLF.to(dtype=activation_dtype)
++        chunk_acts = []
++        for j in range(0, B * L, token_chunk):
++            acts_j = sae.encode(resid_flat[j : j + token_chunk])  # [chunk, d_sae]
++            if selected_latents is not None:
++                acts_j = acts_j[:, selected_latents]
++            acts_j = acts_j * mask_flat[j : j + token_chunk].to(dtype=acts_j.dtype)[:, None]
++            if activation_dtype is not None:
++                acts_j = acts_j.to(dtype=activation_dtype)
++            chunk_acts.append(acts_j)
+ 
++        n_out = len(selected_latents) if selected_latents is not None else d_sae
++        sae_act_BLF = torch.cat(chunk_acts, dim=0).reshape(B, L, n_out)
+         sae_acts.append(sae_act_BLF)
+ 
+     all_sae_acts_BLF = torch.cat(sae_acts, dim=0)
+@@ -228,27 +239,35 @@ def get_feature_activation_sparsity(
+     total_tokens = 0
+ 
+     for i in tqdm(range(0, tokens.shape[0], batch_size)):
+-        tokens_BL = tokens[i : i + batch_size]
++        tokens_BL = tokens[i : i + batch_size].to(model.W_E.device)
+         _, cache = model.run_with_cache(
+             tokens_BL, stop_at_layer=layer + 1, names_filter=hook_name
+         )
+-        resid_BLD: Float[torch.Tensor, "batch seq_len d_model"] = cache[hook_name]
+-
+-        sae_act_BLF: Float[torch.Tensor, "batch seq_len d_sae"] = sae.encode(resid_BLD)
+-        # make act to zero or one
+-        sae_act_BLF = (sae_act_BLF > 0).to(dtype=torch.float32)
++        resid_BLD: Float[torch.Tensor, "batch seq_len d_model"] = cache[hook_name].to(sae.device)
+ 
+         if mask_bos_pad_eos_tokens:
+             attn_mask_BL = get_bos_pad_eos_mask(tokens_BL, model.tokenizer)
+         else:
+             attn_mask_BL = torch.ones_like(tokens_BL, dtype=torch.bool)
+ 
+-        attn_mask_BL = attn_mask_BL.to(device=sae_act_BLF.device)
+-
+-        sae_act_BLF = sae_act_BLF * attn_mask_BL[:, :, None]
+-        total_tokens += attn_mask_BL.sum().item()
+-
+-        running_sum_F += einops.reduce(sae_act_BLF, "B L F -> F", "sum")
++        attn_mask_BL = attn_mask_BL.to(device=resid_BLD.device)
++
++        # Flatten [B, L, D] -> [B*L, D] and encode in token-level chunks so we
++        # never materialise the full [B, L, d_sae] tensor (can be >512 MiB for
++        # wide SAEs like 262k).
++        B, L, D = resid_BLD.shape
++        resid_flat = resid_BLD.reshape(B * L, D)
++        mask_flat = attn_mask_BL.reshape(B * L)
++        d_sae = sae.W_dec.shape[0]
++        # target ~256 MiB per encode call
++        token_chunk = max(1, (256 * 1024 * 1024) // (d_sae * resid_flat.element_size()))
++
++        for j in range(0, B * L, token_chunk):
++            acts = sae.encode(resid_flat[j : j + token_chunk])  # [chunk, d_sae]
++            acts = (acts > 0).to(dtype=torch.float32)
++            m = mask_flat[j : j + token_chunk].to(dtype=torch.float32)
++            running_sum_F += (acts * m[:, None]).sum(dim=0)
++            total_tokens += m.sum().item()
+ 
+     return running_sum_F / total_tokens
+ 
+@@ -301,7 +320,7 @@ def get_sae_meaned_activations(
+         all_acts_BF = []
+ 
+         for i in range(0, len(all_acts_BLD), sae_batch_size):
+-            acts_BLD = all_acts_BLD[i : i + sae_batch_size]
++            acts_BLD = all_acts_BLD[i : i + sae_batch_size].to(sae.device)
+             acts_BLF = sae.encode(acts_BLD)
+ 
+             activations_BL = einops.reduce(acts_BLD, "B L D -> B L", "sum")
+@@ -350,7 +369,7 @@ def save_activations(
+             range(0, tokens_SL.shape[0], batch_size),
+             desc=f"Saving chunk {save_idx + 1}/{num_chunks}",
+         ):
+-            tokens_BL = tokens_SL[i : i + batch_size]
++            tokens_BL = tokens_SL[i : i + batch_size].to(model.W_E.device)
+             _, cache = model.run_with_cache(
+                 tokens_BL, stop_at_layer=layer + 1, names_filter=hook_name
+             )
+@@ -413,7 +432,7 @@ def encode_precomputed_activations(
+             desc=f"Encoding chunk {save_idx + 1}/{num_chunks}",
+         ):
+             batch_end = min(batch_start + sae_batch_size, num_samples)
+-            resid_BLD = resid_SLD[batch_start:batch_end]
++            resid_BLD = resid_SLD[batch_start:batch_end].to(sae.device)
+             tokens_BL = tokens_SL[batch_start:batch_end]
+ 
+             sae_act_BLF = sae.encode(resid_BLD)

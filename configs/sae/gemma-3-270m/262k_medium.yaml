@@ -1,0 +1,7 @@
+defaults:
+  - /sae/gemma-3-270m/base@_here_
+
+release: "gemma-scope-2-270m-pt-res"
+layers: [5, 9, 12, 15]  
+id_template: "layer_{}_width_262k_l0_medium"
+id_template_neuronpedia: "{}-gemmascope-2-res-262k"

@@ -1,0 +1,5 @@
+# @package _global_
+# Sec. 3 / App. B.2: interactive latent-set cluster browser on The Pile (APM similarity).
+defaults:
+  - /sae: gemma-3-270m/16k_big
+  - _self_

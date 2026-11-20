@@ -1,0 +1,87 @@
+[project]
+name = "sae_set_behaviour"
+version = "0.1.0"
+description = "Code for 'Beyond a Bag of Features: Set-Level Instability in Sparse Autoencoders'"
+authors = [{ name = "Nikolai Bolik", email = "bolik@uni-heidelberg.de" }]
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">= 3.11, < 3.14"
+dependencies = []
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sae_set_behaviour"]
+
+# ── pixi ───────────────────────────────────────────────────────────────────────
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.dependencies]
+python = "3.11.*"
+numpy = ">=1.24,<2"
+matplotlib = ">=3.10,<4"
+scikit-learn = "*"
+scipy = "*"
+pandas = "*"
+libstdcxx-ng = "*"
+libgcc-ng = "*"
+
+[tool.pixi.pypi-dependencies]
+torch = "*"
+transformers = "*"
+datasets = ">=3,<4"
+hydra-core = "*"
+wandb = "*"
+jaxtyping = "*"
+termcolor = "*"
+tqdm = "*"
+ipykernel = "*"
+# Pinned to the exact revisions the paper results were produced with
+# (the TransformerLens fork adds Gemma 3 support).
+transformer_lens = { git = "https://github.com/LeStoe11/TransformerLens/", rev = "73043c1e68df1c02b8514b41ead390d28a72587f" }
+sae_lens = { git = "https://github.com/decoderesearch/SAELens", rev = "97784abf2235a3b1c8527d93a5db8bf4d99338df" }
+sae_set_behaviour = { path = ".", editable = true }
+
+[tool.pixi.activation.env]
+LD_LIBRARY_PATH = "$CONDA_PREFIX/lib"
+
+# App. G.2 auto-interpretability (SAEBench + OpenAI). See third_party/sae_bench_0.6.0.patch.
+[tool.pixi.feature.autointerp.pypi-dependencies]
+sae-bench = "==0.6.0"
+openai = "*"
+
+# Toy-model studies (Sec. 3, App. B.1). The vendored feature-hedging code targets SAELens 5.x,
+# which is incompatible with the main environment, so this is a separate environment.
+[tool.pixi.feature.toy.dependencies]
+python = "3.11.*"
+
+[tool.pixi.feature.toy.pypi-dependencies]
+torch = "==2.7.0"
+sae-lens = "==5.10.2"
+transformer-lens = "==2.15.0"
+transformers = "==4.51.3"
+datasets = "==2.21.0"
+pyarrow = "==20.0.0"
+numpy = "==1.26.4"
+pandas = "*"
+scipy = "*"
+matplotlib = "*"
+seaborn = "*"
+tueplots = "*"
+plotly = "==5.24.1"
+rich = "*"
+safetensors = "*"
+wandb = "==0.19.10"   # SAELens 5.x uses wandb.util.generate_id (removed in later wandb)
+tqdm = "*"
+
+[tool.pixi.feature.toy.activation.env]
+PYTHONPATH = "$PIXI_PROJECT_ROOT/third_party/feature_hedging"
+
+[tool.pixi.environments]
+default = { solve-group = "default" }
+autointerp = { features = ["autointerp"], solve-group = "default" }
+toy = { features = ["toy"], no-default-feature = true }

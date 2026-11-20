@@ -1,0 +1,7 @@
+defaults:
+  - /sae/gemma-3-1b/base@_here_
+
+layers: [7, 13, 17, 22]
+release: "gemma-scope-2-1b-pt-res"
+
+id_template: "layer_{}_width_16k_l0_medium"

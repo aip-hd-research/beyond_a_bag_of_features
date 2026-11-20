@@ -1,0 +1,20 @@
+# @package _global_
+# App. F.4: activation magnitudes of lost vs. generally active latents (amplitude_lost_vs_general.py).
+defaults:
+  - /sae: gemma-3-270m/16k_big
+  - /wandb: default
+  - _self_
+
+wandb:
+  project: experiment_2_lost_latents_amplitude
+
+data_cases: ["english", "german", "human_typicality"]
+k_values: [1, 2, 3, 4, 5]
+plot_layers: null           # null -> every layer in sae.layers
+setup_name: A_fixed_base
+pooling: last_token
+
+log_images_to_wandb: false
+log_bin_tables_to_wandb: false
+log_combined_bin_table_to_wandb: true   # one long-format table (all layers x k) per data case
+log_raw_values_to_wandb: true           # raw amplitudes as a wandb artifact

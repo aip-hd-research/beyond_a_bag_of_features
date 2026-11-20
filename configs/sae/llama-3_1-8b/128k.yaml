@@ -1,0 +1,5 @@
+defaults:
+  - /sae/llama-3_1-8b/base@_here_
+
+release: "llama_scope_lxr_32x"
+id_template: "l{}r_32x"

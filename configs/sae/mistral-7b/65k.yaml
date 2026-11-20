@@ -1,0 +1,9 @@
+layers: [8, 16, 24]
+interpretability_layers: [8, 16, 24]  # all available layers
+
+release: "mistral-7b-res-wg"
+id_template: "blocks.{}.hook_resid_pre"
+
+model:
+  name: "mistralai/Mistral-7B-v0.1"
+  dtype: "bfloat16"

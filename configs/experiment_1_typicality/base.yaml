@@ -1,0 +1,11 @@
+# @package _global_
+# Experiment 1 (Sec. 4, App. C-E): category recovery (AMI) and typicality rankings.
+defaults:
+  - /sae: gemma-3-270m/16k_big
+  - /wandb: default
+  - _self_
+
+wandb:
+  project: experiment_1_typicality
+
+base_save_dir: results/experiment_1_typicality

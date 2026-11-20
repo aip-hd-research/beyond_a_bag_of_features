@@ -1,0 +1,4 @@
+defaults:
+  - /sae/gemma-3-12b/base@_here_
+
+id_template: "layer_{}_width_262k_l0_small"

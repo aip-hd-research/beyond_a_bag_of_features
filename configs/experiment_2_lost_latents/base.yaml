@@ -1,0 +1,14 @@
+# @package _global_
+# Experiment 2 (Sec. 5, App. F): lost latents under compositional refinement.
+# Used by main_by_input_data.py and what_happened_to_lost_features_{full_sequence,noun}.py.
+defaults:
+  - /sae: gemma-3-270m/16k_big
+  - /wandb: default
+  - _self_
+
+wandb:
+  project: experiment_2_lost_latents
+
+data_cases: ["english", "german", "human_typicality"]  # adjective-noun chains (EN/DE) and category-instance pairs
+k_values: [1, 2, 3, 4, 5]  # used by main_by_input_data.py; the what_happened_* scripts always compute every k
+row_batch_size: 2          # what_happened_* scripts; lower if you run out of GPU memory

@@ -1,0 +1,17 @@
+# outputs
+results/
+outputs/
+multirun/
+wandb/
+.wandb_cache*/
+*.png
+*.pdf
+*.pt
+*.safetensors
+
+# environments / caches
+.pixi/
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/

@@ -1,0 +1,6 @@
+defaults:
+  - /sae/gemma-3-270m/base@_here_
+
+release: "gemma-scope-2-270m-pt-res"
+layers: [5, 9, 12, 15]  
+id_template: "layer_{}_width_16k_l0_medium"

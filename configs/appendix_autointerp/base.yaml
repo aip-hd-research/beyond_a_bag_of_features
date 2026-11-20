@@ -1,0 +1,12 @@
+# @package _global_
+# App. G.2: auto-interpretability of lost vs. surviving vs. control latents.
+# Requires OPENAI_API_KEY and the `autointerp` pixi environment (SAEBench).
+defaults:
+  - /sae: gemma-3-270m/16k_medium
+  - /wandb: default
+  - _self_
+
+wandb:
+  project: appendix_autointerp
+
+data_csv: data/data.csv
